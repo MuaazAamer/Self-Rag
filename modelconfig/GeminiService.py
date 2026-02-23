@@ -12,7 +12,7 @@ class GeminiService:
         self.model = None
         self.embedding_model=None
 
-    def setModel(self, model_name="gemini-1.5-flash")->any:
+    def setModel(self, model_name="gemini-3-pro-preview")->any:
         self.model_name = model_name    
         self.model = ChatGoogleGenerativeAI(
             model=self.model_name,
@@ -20,6 +20,7 @@ class GeminiService:
             max_tokens=None,
             timeout=None,
             max_retries=2,
+            google_api_key=self.api_key
         )
         return self.model
     

@@ -19,7 +19,7 @@ class ChromaDb:
             self.vector_store = Chroma(
                 collection_name="test_collection",
                 embedding_function=self.embedding_model,
-                persist_directory="./chroma_langchain_db",  # Where to save data locally, remove if not necessary
+                persist_directory="./vectorStore/chroma_langchain_db",  # Where to save data locally, remove if not necessary
             )
         return self.vector_store
 

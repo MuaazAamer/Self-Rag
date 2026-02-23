@@ -17,19 +17,20 @@ class ReflectionCritics:
         """
         REFLECTION 1: Decide if retrieval is necessary.
         """
-        prompt = f"""You are a retrieval decision system. Analyze if this query requires external document retrieval.
+        prompt = f"""You are an expert retrieval decision system. Analyze if this query requires external document retrieval.
             Query: "{query}"
             Classification rules:
-            - Answer "NO" if: simple math, general knowledge, greetings, personal opinions
-            - Answer "YES" if: requires specific facts, recent events, domain knowledge, citations
-            Respond in this exact format:
+            - Answer "NO" if: simple math, general knowledge, greetings, personal opinions,anything unrelated to AI,ML,GEN AI.
+            - Answer "YES" if: requires specific facts, recent events, domain knowledge, citations,links and anything related to AI,ML,GEN AI.
+            Respond in this exact format,do not generate any additional text:
             DECISION: YES or NO
             CONFIDENCE: 0.0 to 1.0
             REASONING: Brief explanation
-            Your response:"""
+            """
         
         try:
             response = self.llm.invoke(prompt).content
+            response=response[0]["text"]
             
             decision_match = re.search(r'DECISION:\s*(YES|NO)', response, re.IGNORECASE)
             confidence_match = re.search(r'CONFIDENCE:\s*(0?\.\d+|1\.0)', response)
@@ -39,60 +40,94 @@ class ReflectionCritics:
             confidence = float(confidence_match.group(1)) if confidence_match else 0.5
             reasoning = reasoning_match.group(1).strip() if reasoning_match else "No reasoning provided"
             
-            should_retrieve = decision == "YES" or confidence < confidence_threshold
+            should_retrieve = decision == "YES"
             
             return should_retrieve, confidence, reasoning
             
         except Exception as e:
             return True, 0.0, f"Error in retrieval decision: {str(e)}"
     
-    def gradeRelevance(self, query: str, documents: list[Document], threshold: int = 3) -> list[tuple[Document, int, str]]:
+    def gradeRelevance(
+        self,
+        query: str,
+        documents: list[Document],
+        threshold: int = 3
+    ) -> list[tuple[Document, int, str]]:
         """
-        REFLECTION 2: Grade each retrieved document's relevance.
+        REFLECTION 2 (BATCHED): Grade all retrieved documents in one LLM call.
+        Returns same format as before:
+            list[(Document, score, reasoning)]
         """
-        relevant_docs = []
-        
-        for doc in documents:
-            content_preview = doc.page_content[:800]
-            
-            prompt = f"""Grade the relevance of this document to the query.
-                Query: "{query}"
 
-                Document excerpt:
-                {content_preview}
+        if not documents:
+            return []
 
-                Rate on scale 1-5:
-                5 = Directly answers the query
-                4 = Highly relevant supporting info
-                3 = Somewhat relevant
-                2 = Tangentially related
-                1 = Not relevant
+        previews = []
+        for i, doc in enumerate(documents):
+            preview = doc.page_content[:800]
+            previews.append(f"DOCUMENT_{i}:\n{preview}")
 
-                Respond in this exact format:
-                SCORE: [1-5]
-                REASONING: Brief explanation
+        prompt = f"""
+            You are a relevance grading system.
 
-                Your response:
-            """
-            
-            try:
-                response = self.llm.invoke(prompt).content
-                
-                score_match = re.search(r'SCORE:\s*([1-5])', response)
-                reasoning_match = re.search(r'REASONING:\s*(.+)', response, re.DOTALL)
-                
-                score = int(score_match.group(1)) if score_match else 1
-                reasoning = reasoning_match.group(1).strip() if reasoning_match else "No reasoning"
-                
-                if score >= threshold:
-                    relevant_docs.append((doc, score, reasoning))
-                    
-            except Exception as e:
-                relevant_docs.append((doc, threshold, f"Error grading: {str(e)}"))
-        
-        # Sort by score descending
-        relevant_docs.sort(key=lambda x: x[1], reverse=True)
-        return relevant_docs
+            Query: "{query}"
+
+            Below are numbered document excerpts.
+
+            {chr(10).join(previews)}
+
+            Rate each document from 1-5:
+
+            5 = Directly answers the query  
+            4 = Highly relevant supporting info  
+            3 = Somewhat relevant  
+            2 = Tangentially related  
+            1 = Not relevant  
+
+            Respond ONLY with valid JSON in this exact format:
+
+            [
+            {{"doc_id": 0, "score": 1-5, "reasoning": "..."}},
+            ...
+            ]
+        """
+
+        try:
+            response = self.llm.invoke(prompt).content
+            if isinstance(response, list):
+                response = response[0].get("text", "")
+
+            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON array found in response")
+
+            import json
+            results = json.loads(json_match.group(0))
+
+            relevant_docs = []
+
+            for item in results:
+                doc_id = item.get("doc_id")
+                score = int(item.get("score", 0))
+                reasoning = item.get("reasoning", "No reasoning")
+
+                if (
+                    isinstance(doc_id, int)
+                    and 0 <= doc_id < len(documents)
+                    and score >= threshold
+                ):
+                    relevant_docs.append(
+                        (documents[doc_id], score, reasoning)
+                    )
+
+            relevant_docs.sort(key=lambda x: x[1], reverse=True)
+            return relevant_docs
+
+        except Exception as e:
+            return [
+                (doc, threshold, f"Batch grading error: {str(e)}")
+                for doc in documents
+            ]
     
     def checkSupport(self, query: str, answer: str, context: str) -> dict:
         """
@@ -123,6 +158,7 @@ class ReflectionCritics:
         
         try:
             response = self.llm.invoke(prompt).content
+            response=response[0]["text"]
             
             support_match = re.search(r'SUPPORT_LEVEL:\s*(FULLY_SUPPORTED|PARTIALLY_SUPPORTED|UNSUPPORTED)', response, re.IGNORECASE)
             confidence_match = re.search(r'CONFIDENCE:\s*(0?\.\d+|1\.0)', response)

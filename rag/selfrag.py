@@ -13,15 +13,15 @@ class SelfRag:
     3. Post-generation: Verify answer support
     """
     
-    def __init__(self,model_name: str = "gemini-1.5-flash",temperature: float = 0.1,collection_name: str = "test_collection"):
+    def __init__(self):
         self.gemini_service = GeminiService()
-        self.llm = self.gemini_service.setModel(model_name)
+        self.llm = self.gemini_service.setModel()
         self.chroma_db = ChromaDb()
         self.vector_store = self.chroma_db.createVectorStore()
         self.critics = ReflectionCritics(self.llm)
         self.retrieval_confidence_threshold = 0.7
         self.relevance_threshold = 3
-        self.top_k_retrieve = 5
+        self.top_k_retrieve = 7
         self.max_context_length = 3000
     
     def addDocuments(self, documents: list[Document]) -> dict:
@@ -124,7 +124,7 @@ class SelfRag:
         result["debug"]["context_length"] = len(context)
         
         # ===== STAGE 5: GENERATION =====
-        generation_prompt = f"""You are a helpful assistant. Answer the question using ONLY the information provided in the context below.s
+        generation_prompt = f"""You are a helpful assistant. Answer the question using ONLY the information provided in the context below.
             Context:
             {context}
 
