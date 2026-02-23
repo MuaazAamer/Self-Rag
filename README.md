@@ -44,12 +44,12 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 **step 3: install below libraries:**
 # Core LangChain ecosystem
-pip install langchain
-pip install langchain-core
-pip install langchain-community
-pip install langchain-google-genai
-pip install langchain-chroma
-pip install langchain-text-splitters
+- pip install langchain
+- pip install langchain-core
+- pip install langchain-community
+- pip install langchain-google-genai
+- pip install langchain-chroma
+- pip install langchain-text-splitters
 
 # Vector database
 pip install chromadb
